@@ -108,7 +108,7 @@ parameter_t param;
 
 // this provides a heartbeat on pin 9, so you can tell the software is running.
 uint8_t hbval=128;
-int8_t hbdelta=8;
+uint8_t hbdelta=8;
 void heartbeat() 
 {
   if (hbval > 192) hbdelta = -hbdelta;
@@ -237,8 +237,6 @@ void set_parameters()
 
 void start_pmode() 
 {
-  uint8_t res;
-  
   digitalWrite(RESET, HIGH);
   pinMode(RESET, OUTPUT);
   delay(20);
@@ -256,16 +254,15 @@ void start_pmode()
 
 void end_pmode() 
 {
-  //digitalWrite(RESET, HIGH);
-  //pinMode(RESET, INPUT);
+  digitalWrite(RESET, HIGH);
+  pinMode(RESET, INPUT);
+  
   SWD_exit();
   pmode = 0; 
 }
 
 void universal() 
 {
-  int w;
-  
   fill(4);
 
   if(buff[0] == 0x30 && buff[1] == 0x00) {
