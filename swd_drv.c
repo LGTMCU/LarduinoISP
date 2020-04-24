@@ -164,6 +164,16 @@ void SWD_EEE_DSEQ(uint16_t data)
 	SWD_Idle(8);
 }
 
+void SWD_EEP_DSEQ(uint32_t data)
+{
+	SWD_WriteByte(1, 0xb2, 0);
+	SWD_WriteByte(0, (data & 0xff), 0);
+	SWD_WriteByte(0, ((data >> 8) & 0xff), 0);
+	SWD_WriteByte(0, ((data >> 16) & 0xff), 0);
+	SWD_WriteByte(0, ((data >> 24) & 0xff), 1);
+	SWD_Idle(8);
+}
+
 uint8_t SWD_EEE_GetBusy()
 {
 	uint8_t res = 0;
@@ -196,9 +206,26 @@ void SWD_EEE_UnlockTiming()
 	} while(ib == 1 && timout > 0);
 }
 
+void SWD_EEP_UnlockTiming()
+{
+	SWD_EEE_CSEQ(0x00, 0x00);
+	delayus(100);
+	SWD_EEE_CSEQ(0x98, 0x00);
+  delayus(50);
+	SWD_EEE_CSEQ(0x9a, 0x00);
+	delay(30);
+	SWD_EEE_CSEQ(0x8a, 0x00);
+	delayus(300);
+	SWD_EEE_CSEQ(0x88, 0x00);
+  delayus(100);
+	SWD_EEE_CSEQ(0x00, 0x00);
+  delayus(100);
+
+}
+
 uint16_t SWD_EEE_Read(uint16_t addr)
 {
-	volatile uint8_t hbyte, lbyte;
+	uint8_t hbyte, lbyte;
 	
 	SWD_EEE_CSEQ(0x00, addr);
 	SWD_EEE_CSEQ(0xa0, addr);
@@ -209,7 +236,26 @@ uint16_t SWD_EEE_Read(uint16_t addr)
 	SWD_Idle(10);
 	SWD_EEE_CSEQ(0x00, addr);
 
-	return (hbyte << 8) | lbyte;
+	return ((uint16_t)hbyte << 8) | lbyte;
+}
+
+uint32_t SWD_EEP_Read(uint16_t addr)
+{
+	uint32_t dw; 
+
+	SWD_EEE_CSEQ(0xc0, addr);
+	SWD_EEE_CSEQ(0xe0, addr);
+
+	SWD_WriteByte(1, 0xaa, 1);
+	dw = SWD_ReadByte(1, 0);
+	dw |= (uint32_t)SWD_ReadByte(0, 0) << 8;
+	dw |= (uint32_t)SWD_ReadByte(0, 0) << 16;
+	dw |= (uint32_t)SWD_ReadByte(0, 1) << 24;
+	SWD_Idle(10);
+	SWD_EEE_CSEQ(0x00, addr);
+	SWD_Idle(10);
+
+	return dw;
 }
 
 void SWD_EEE_Write(uint16_t data, uint16_t addr)
@@ -232,29 +278,64 @@ void SWD_EEE_Write(uint16_t data, uint16_t addr)
 	SWD_EEE_CSEQ(0x00, addr);
 }
 
+void SWD_EEP_Write(uint32_t data, uint16_t addr)
+{
+	SWD_EEE_CSEQ(0x84, addr);
+	SWD_EEP_DSEQ(data);
+	SWD_EEE_CSEQ(0x86, addr);
+	delayus(2);
+	SWD_EEE_CSEQ(0xc6, addr);
+	delayus(12);
+	SWD_EEE_CSEQ(0x86, addr);
+	SWD_EEE_CSEQ(0x82, addr);
+	SWD_EEE_CSEQ(0x80, addr);
+	SWD_EEE_CSEQ(0x00, addr);
+	delayus(1);
+}
+
 uint8_t SWD_UnLock()
 {
 	char swdid[4];
+
+	uint8_t mtype = LGTMCU_UNKNOWN;
 	
 	SWD_Idle(80);
 	SWD_SWDEN();	 
 	SWD_ReadSWDID(swdid);
-	
-	if((swdid[0] & 0x3f) == 0x3f)
-		return 1;
-	
+
+	if((uint8_t)swdid[1] == 0xA2) { 
+		mtype = LGTMCU_8F328P;	// 328P
+	} else if((uint8_t)swdid[1] == 0xA1) {
+		mtype = LGTMCU_8F328D;	// 328D
+	} else {
+		return LGTMCU_UNKNOWN;	// unknown
+	}
+
+	if(((uint8_t)swdid[0] & 0x3f) == 0x3f)
+		return (mtype | 0x80);
+  
 	SWD_UnLock0();
-	SWD_EEE_UnlockTiming();
+	
+	if(mtype == LGTMCU_8F328P)
+	{
+		SWD_EEP_UnlockTiming();
+	}
+	else
+	{
+		SWD_EEE_UnlockTiming();
+	}
+  
 	SWD_UnLock1();
 	delayus(100);
 	SWD_UnLock0();
 	delayus(100);
 	SWD_UnLock1();	
-
+  
  	SWD_ReadSWDID(swdid);
   
- 	if((swdid[0] & 0x3f) == 0x3f)
-    	return 1;
+ 	if(((uint8_t)swdid[0] & 0x3f) == 0x3f)
+    		return (mtype | 0x80);
 
- 	return 0;
+ 	return 0; 
 }
+
