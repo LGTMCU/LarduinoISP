@@ -1,4 +1,4 @@
-// LarduinoISP for LGT8FX8D series
+ // LarduinoISP for LGT8FX8D series
 // Project fork from
 //    - ArduinoISP version 04m3
 // Copyright (c) 2008-2011 Randall Bohn
@@ -8,7 +8,7 @@
 // This sketch turns the Arduino into a AVRISP
 // using the following arduino pins:
 //
-// pin name:    Arduino:          LGT8FX8D:
+// pin name:    Arduino:          LGT8FX8D/P:
 // slave reset: 10:               PC6/RESET 
 // SWD:         12:               PE2/SWD
 // SWC:         13:               PE0/SCK
@@ -44,7 +44,7 @@
 // - The SPI functions herein were developed for the AVR910_ARD programmer 
 // - More information at http://code.google.com/p/mega-isp
 
-// LarduinoISP for LGTF8FX8D Series
+// LarduinoISP for LGTF8FX8D/P Series
 #include "swd_drv.h"
 #include "pins_arduino.h"
 
@@ -69,7 +69,7 @@
 void pulse(int pin, int times);
 
 void setup() 
-{
+{ 
   SWD_init();
   Serial.begin(19200);
 
@@ -85,7 +85,7 @@ uint8_t error=0;
 uint8_t pmode=0;
 
 // address for reading and writing, set by 'U' command
-int address;
+uint16_t address;
 uint8_t buff[256]; // global block storage
 
 #define beget16(addr) (*addr * 256 + *(addr+1) )
@@ -239,26 +239,29 @@ void start_pmode()
 {
   digitalWrite(RESET, HIGH);
   pinMode(RESET, OUTPUT);
-  delay(20);
+  delay(10);
   digitalWrite(RESET, LOW);
+  delay(10);
   
+  SWD_Idle(80);
   SWD_init();
-  SWD_Idle(10);
-  
+
   do {
     pmode = SWD_UnLock();
-  } while(pmode != 1);
-
+  } while (pmode == 0);
+      
+  // device type
+  pmode &= 0x7f;
   SWD_Idle(10);
 }
 
 void end_pmode() 
-{
+{  
+  SWD_exit();
+  pmode = LGTMCU_UNKNOWN; 
+
   digitalWrite(RESET, HIGH);
   pinMode(RESET, INPUT);
-  
-  SWD_exit();
-  pmode = 0; 
 }
 
 void universal() 
@@ -303,13 +306,41 @@ void write_flash(int length)
 uint8_t write_flash_pages(int length) 
 {
   int cnt = 0;
-  uint16_t word;
+  uint32_t word;
+
+  // in case address is not 32bit aligned
+  // we just care of header-unaligned !!!
+  // cuz its seems no problem if the tail is not 32bit aligned
+  uint8_t _start = 0;
+
+  if(address & 0x1) 
+    _start = 1;
+
+  if(pmode == LGTMCU_8F328P)
+    address >>= 1;
 
   while (cnt < length) {
-    word = buff[cnt++];
-    word += buff[cnt++] << 8;
-    SWD_EEE_Write(word, address);
-    address++;
+    if(pmode == LGTMCU_8F328P) {
+      if(_start == 1) {
+        word = 0xffff;
+        _start = 0;
+      } else {
+        word = buff[cnt++];
+        word += (uint32_t)buff[cnt++] << 8;
+      }
+            
+    	word += (uint32_t)buff[cnt++] << 16;
+    	word += (uint32_t)buff[cnt++] << 24;
+    	SWD_EEP_Write(word, address);
+    }
+    else
+    {      
+      word = buff[cnt++];
+      word += (uint16_t)buff[cnt++] << 8;  
+    	SWD_EEE_Write((uint16_t)word, address);
+    }
+          
+    address++;   
   }
 
   return STK_OK;
@@ -344,7 +375,7 @@ uint8_t write_eeprom_chunk(int start, int length)
   for (int x = 0; x < length; x++) {
     int addr = start+x;
     // do e2prom program here
-    // donothing for lgt8fx8d series
+    // donothing for lgt8fx8d/p series
     delay(45);
   }
   prog_lamp(HIGH); 
@@ -365,6 +396,7 @@ void program_page()
     write_flash(length);
     return;
   }
+  
   if (memtype == 'E') {
     result = (char)write_eeprom(length);
     if (CRC_EOP == getch()) {
@@ -381,14 +413,45 @@ void program_page()
   return;
 }
 
-char flash_read_page(int length) 
+char flash_read_page(uint16_t length) 
 {
-  for (int x = 0; x < length; x+=2) {
-    uint16_t word = SWD_EEE_Read(address);
-    Serial.print((char) (word & 0xff));
-    Serial.print((char) ((word >> 8) & 0xff));
-    address++;
+  uint8_t _start = 0;
+  
+  if(pmode == LGTMCU_8F328P) {
+    // case of address not 32bit aligned
+    if(address & 1)
+      _start = 1;
+
+    // re-aligned to 32bits
+    address >>= 1;
+    
+  	for (uint16_t x = 0; x < length; x+=2) {
+    		uint32_t word = SWD_EEP_Read(address);
+        
+        if(_start == 0) {
+    		  Serial.print((char) (word & 0xff));
+    		  Serial.print((char) ((word >> 8) & 0xff));
+          x += 2;         
+        }
+
+        _start = 0;
+
+        // if length is not 4bytes aligned
+        if(x < length) {
+    		  Serial.print((char) ((word >> 16) & 0xff));
+    		  Serial.print((char) ((word >> 24) & 0xff));
+        }
+   	 	  address++;
+  	}
+  } else {
+  	for (uint16_t x = 0; x < length; x+=2) {
+    		uint16_t word = SWD_EEE_Read(address);
+    		Serial.print((char) (word & 0xff));
+    		Serial.print((char) ((word >> 8) & 0xff));
+   	 	address++;
+  	}
   }
+  
   return STK_OK;
 }
 
@@ -478,7 +541,7 @@ int avrisp()
     empty_reply();
     break;
 
-  case 'P':
+  case 'P': // 0x50
     if (pmode) {
       pulse(LED_ERR, 3);
     } else {
@@ -486,9 +549,9 @@ int avrisp()
     }
     empty_reply();
     break;
-  case 'U': // set address (word)
+  case 'U': // 0x55, set address (word)
     address = getch();
-    address += (getch() << 8);
+    address += ((uint16_t)getch() << 8);
     empty_reply();
     break;
   case 0x60: //STK_PROG_FLASH
@@ -532,4 +595,6 @@ int avrisp()
     else
       Serial.print((char)STK_NOSYNC);
   }
+
+  return 0;
 }
