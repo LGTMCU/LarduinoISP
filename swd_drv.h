@@ -7,6 +7,10 @@
 #ifdef __cplusplus
 extern "C"{
 #endif
+	
+#define LGTMCU_8F328D		0x1
+#define LGTMCU_8F328P		0x2
+#define LGTMCU_UNKNOWN		0x0
 
 #define SWDIF_PIN		PINB
 #define SWDIF_DIR		DDRB
@@ -53,6 +57,9 @@ void SWD_SWDEN();
 uint8_t SWD_UnLock();
 void SWD_EEE_Write(uint16_t, uint16_t);
 uint16_t SWD_EEE_Read(uint16_t);
+	
+void SWD_EEP_Write(uint32_t, uint16_t);
+uint32_t SWD_EEP_Read(uint16_t);
 
 #ifdef __cplusplus
 }
