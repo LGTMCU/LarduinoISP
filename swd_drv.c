@@ -13,6 +13,8 @@ void SWD_init()
 
 void SWD_exit()
 {
+	SWD_SWDEN();
+	
 	SWDIF_DIR &= ~(SWDIF_CLK | SWDIF_DAT);
 }
 
