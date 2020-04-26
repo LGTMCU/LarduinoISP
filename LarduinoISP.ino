@@ -256,14 +256,11 @@ void start_pmode()
 }
 
 void end_pmode() 
-{  
+{ 
+  SWD_SWDEN();
   SWD_exit();
   pmode = LGTMCU_UNKNOWN; 
 
-  digitalWrite(RESET, HIGH);
-  delay(1);
-  digitalWrite(RESET, LOW);
-  delay(10);
   digitalWrite(RESET, HIGH);
   pinMode(RESET, INPUT);
 }
